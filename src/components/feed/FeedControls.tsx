@@ -13,7 +13,7 @@ interface FeedControlsProps {
   onFiltersChange: (next: FeedFilterState) => void;
   journalFilter: string;
   onJournalFilterChange: (id: string) => void;
-  followedJournals: JournalDefinition[];
+  journalOptions: JournalDefinition[];
   onOpenJournalManager: () => void;
   onClearFilters: () => void;
   hasActiveFilters: boolean;
@@ -23,6 +23,7 @@ const SEEN_OPTIONS: { value: FeedSeenFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "unseen", label: "Unseen" },
   { value: "seen", label: "Seen" },
+  { value: "saved", label: "Saved" },
 ];
 
 export function FeedControls({
@@ -30,7 +31,7 @@ export function FeedControls({
   onFiltersChange,
   journalFilter,
   onJournalFilterChange,
-  followedJournals,
+  journalOptions,
   onOpenJournalManager,
   onClearFilters,
   hasActiveFilters,
@@ -95,8 +96,8 @@ export function FeedControls({
             className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="Filter by journal"
           >
-            <option value="all">All followed journals</option>
-            {followedJournals.map((journal) => (
+            <option value="all">All journals</option>
+            {journalOptions.map((journal) => (
               <option key={journal.id} value={journal.id}>
                 {journal.name}
               </option>

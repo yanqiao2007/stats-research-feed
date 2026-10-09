@@ -30,7 +30,7 @@ export interface JournalWithState {
   confidence: "verified" | "low";
 }
 
-export type FeedSeenFilter = "all" | "unseen" | "seen";
+export type FeedSeenFilter = "all" | "unseen" | "seen" | "saved";
 export type FeedSortOrder = "newest" | "oldest";
 
 export interface FeedFilterState {

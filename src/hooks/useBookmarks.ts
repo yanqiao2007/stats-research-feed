@@ -1,13 +1,26 @@
 "use client";
 
+import { useMemo } from "react";
+import type { Article } from "@/lib/types";
 import { STORAGE_KEYS } from "@/lib/storage/keys";
-import { createPersistedIdSetStore } from "./createPersistedStore";
+import { createPersistedEntityStore } from "./createPersistedStore";
 
-const bookmarksStore = createPersistedIdSetStore(STORAGE_KEYS.bookmarkedArticleIds, []);
+const bookmarksStore = createPersistedEntityStore<Article>(
+  STORAGE_KEYS.bookmarkedArticles,
+  (article) => article.id,
+);
 
-/** Optional per-article bookmarking, persisted locally. */
+/**
+ * Persistent bookmarking. Stores a full snapshot of each saved article (not
+ * just its id), so the Saved view can render it independent of the live
+ * feed — a bookmark survives unfollowing its journal or the article aging
+ * out of the 90-day retrieval window.
+ */
 export function useBookmarks() {
-  const { ids: bookmarkedArticleIds, has: isBookmarked, toggle: toggleBookmark } = bookmarksStore.useIdSet();
+  const { entities, has: isBookmarked, toggle: toggleBookmark, remove: removeBookmark } =
+    bookmarksStore.useEntities();
 
-  return { bookmarkedArticleIds, isBookmarked, toggleBookmark };
+  const bookmarkedArticles = useMemo(() => Array.from(entities.values()), [entities]);
+
+  return { bookmarkedArticles, isBookmarked, toggleBookmark, removeBookmark };
 }

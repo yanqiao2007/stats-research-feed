@@ -9,7 +9,13 @@ export const STORAGE_KEYS = {
   /** Where the user was last reading, for "continue where you left off". */
   continueReadingPosition: "stats-feed:continue-reading-position",
   firstRunNoticeDismissed: "stats-feed:first-run-dismissed",
-  bookmarkedArticleIds: "stats-feed:bookmarked-article-ids",
+  /**
+   * Full Article snapshots (not just ids) so a saved article stays viewable
+   * in the Saved tab even after its journal is unfollowed or it ages out of
+   * the live feed window. Supersedes the old id-only "bookmarked-article-ids"
+   * key from V1, which is no longer read or written.
+   */
+  bookmarkedArticles: "stats-feed:bookmarked-articles-v2",
   openAlexSourceCache: "stats-feed:openalex-source-cache",
   openAlexWorksCache: "stats-feed:openalex-works-cache",
 } as const;
