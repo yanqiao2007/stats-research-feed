@@ -26,6 +26,7 @@ import { ErrorState } from "./ErrorState";
 import { LoadingState } from "./LoadingState";
 import { JournalManager } from "@/components/journals/JournalManager";
 import { InfoDialog } from "@/components/info/InfoDialog";
+import { AccountButton } from "@/components/auth/AccountButton";
 import { Button } from "@/components/ui/button";
 
 const DEFAULT_FILTERS: FeedFilterState = {
@@ -237,15 +238,18 @@ export function FeedPage() {
             <h1 className="text-xl font-bold tracking-tight text-foreground">STATS Research Feed</h1>
             <p className="text-sm text-muted-foreground">Your personalized research inbox.</p>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setInfoOpen(true)}
-            className="shrink-0 gap-1.5 text-muted-foreground"
-          >
-            <Info className="h-3.5 w-3.5" />
-            About
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <AccountButton />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setInfoOpen(true)}
+              className="shrink-0 gap-1.5 text-muted-foreground"
+            >
+              <Info className="h-3.5 w-3.5" />
+              About
+            </Button>
+          </div>
         </div>
       </header>
 

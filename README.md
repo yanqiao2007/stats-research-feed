@@ -103,7 +103,14 @@ src/
     journals/              Journal watchlist management dialog
   hooks/                  React hooks: watchlist, seen state, bookmarks,
                            visit tracking, first-run notice
+    auth/                 Sign-in dialog + header account button
   lib/
+    auth/AuthProvider.tsx Auth context: session state, magic link, sign-out
+    supabase/client.ts    Browser Supabase client (null when unconfigured)
+    sync/                 Local-first cloud sync: the store<->cloud bus,
+                           the Supabase data layer, and the engine that
+                           seeds/pulls/pushes — the ONLY place that talks
+                           to Supabase tables
     journals/catalog.ts   The static journal catalog (name + ISSNs)
     feed/continueTarget.ts Pure function deriving the "Continue where you
                            left off" target from articles + seen state
@@ -132,7 +139,9 @@ data-fetching and persistence logic centralized, testable, and swappable.
   heavyweight component library
 - **React hooks + `useSyncExternalStore`** for state — no Redux/Zustand/etc.
 - **OpenAlex** as the live research metadata source (see below)
-- No backend, no database, no authentication — this is a client-only V1
+- **Supabase** (Postgres + Auth) for the *optional* account layer — magic-link
+  sign-in and cross-device sync. Entirely opt-in at both the deployment level
+  (no env vars → no accounts) and the user level (no sign-in → no server)
 
 ## OpenAlex integration
 
@@ -217,6 +226,10 @@ npm run dev
 Then open [http://localhost:3000](http://localhost:3000). No environment
 variables, API keys, or accounts are required — it works immediately.
 
+To additionally turn on optional accounts, follow
+[`SUPABASE_SETUP.md`](SUPABASE_SETUP.md) (about 15 minutes). Without it the
+app simply renders no sign-in UI and makes no calls to anything but OpenAlex.
+
 Other useful commands:
 
 ```bash
@@ -225,25 +238,22 @@ npm run start   # run the production build locally
 npm run lint    # ESLint
 ```
 
-> **Note on this development environment:** the sandbox this app was
-> originally built in, and the sandbox the Aug 2026 Zhou-feedback
-> remediation pass was implemented in, both block outbound network access
-> (the V1 sandbox to `api.openalex.org` specifically; the remediation
-> sandbox blocked essentially all direct package-registry/API egress, which
-> also meant `npm install` itself could not complete there). Live OpenAlex
-> retrieval and a running `npm run dev`/`npm run build` were not exercised
-> end-to-end in either session — verify both once this runs somewhere with
-> normal internet access (your own machine, Vercel, etc.). The OpenAlex
-> integration code follows OpenAlex's documented, no-key REST API and was
-> checked against OpenAlex's live documentation (not just training memory)
-> during the remediation pass — see the PR description for exactly what was
-> and wasn't verified.
+> **Verification status (Oct 2026):** the two earlier build sessions ran in
+> sandboxes with no outbound network access, so neither `npm run build` nor a
+> live OpenAlex request had ever actually been exercised. Both have now been
+> run successfully on a normal connection: `npm run build`, `npm run lint`,
+> and `npx tsc --noEmit` all pass, and a cold load retrieved **339 real
+> articles across all 26 journals** from `api.openalex.org` with no demo
+> fallback and no unresolved journals. The Supabase account layer's own
+> verification status is noted in the section below.
 
 ## How local persistence works
 
 Everything the app remembers about you lives in your browser's
-`localStorage` — there is no server, no account, and nothing leaves your
-device. See `src/lib/storage/localStorageAdapter.ts` and
+`localStorage`. Without an account that is the whole story — nothing leaves
+your device. With an account, three of these keys additionally sync (see
+"Optional accounts and cross-device sync" below); the rest never do.
+See `src/lib/storage/localStorageAdapter.ts` and
 `src/lib/storage/keys.ts` for the full list of keys. In short, it persists:
 
 - Your followed journal IDs
@@ -255,6 +265,9 @@ device. See `src/lib/storage/localStorageAdapter.ts` and
   article stays viewable in the **Saved** tab even if you later unfollow
   its journal or it ages out of the 90-day feed window
 - Whether you've dismissed the first-run notice
+- Which account the synced state belongs to, when signed in (so one person's
+  local state can never be pushed up into another person's new account on a
+  shared machine)
 - Per-journal caches of OpenAlex source-ID resolutions and recent works (to
   avoid refetching data that's already fresh — see "Caching model at a
   glance" above)
@@ -268,35 +281,90 @@ and every hook that owns a piece of state (`useWatchlist`, `useSeenState`,
 etc.) is built on that adapter plus `useSyncExternalStore` — never
 `localStorage` calls scattered through components.
 
-## Migrating from localStorage to a real backend later
+## Optional accounts and cross-device sync
 
-Because persistence is isolated behind one adapter, moving to Supabase (or
-any backend) later mainly means changing `localStorageAdapter.ts`'s
-implementation of `get`/`set`/`remove` to make network calls instead of
-touching `window.localStorage` — the hooks and components that call it
-wouldn't need to change. The pieces that would still need real work:
+Accounts are off until someone configures them, and optional for every reader
+even then. The model is **local-first**: `localStorage` remains the single
+synchronous source of truth the UI renders from, signed in or not. That is
+what keeps the read path free of loading spinners and keeps the whole app
+working offline and signed out, exactly as V1 did.
 
-- Adding authentication (there is none in V1 — anyone opening the app in a
-  browser gets their own local, unauthenticated state)
-- Moving the per-key store model to a per-user schema in Postgres
-- Deciding a sync strategy for state that currently assumes "one browser,
-  one user" (e.g. merging seen-state across devices)
+Setup lives in [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md); the schema and its
+row-level security policies live in
+[`supabase/migrations/0001_user_state.sql`](supabase/migrations/0001_user_state.sql).
+
+### What syncs, and what deliberately doesn't
+
+| State | Syncs? | Why |
+|---|---|---|
+| Followed journals | Yes | Real curation effort; the main thing worth carrying between devices |
+| Seen article ids | Yes | The feature the app exists for — "where did I leave off" should survive a change of machine |
+| Saved articles (full snapshots) | Yes | Same reasoning, and the snapshot keeps them readable after a journal is unfollowed |
+| Previous-visit timestamps | No | Genuinely per-device: "new since your last visit" means your last visit *here* |
+| OpenAlex source/works caches | No | Disposable performance data with a 20-minute/24-hour TTL. Syncing them would add write traffic and staleness bugs for no benefit |
+
+### How it behaves
+
+- **Signing in for the first time** seeds the cloud *from* the browser, so a
+  reader who spent months curating a watchlist anonymously keeps all of it.
+- **Every load after that** treats the cloud as authoritative and overwrites
+  local state. This is deliberately not a merge: a union cannot tell "absent"
+  from "deliberately deleted", so merging would resurrect journals the user
+  unfollowed and articles they marked unseen.
+- **Each change pushes a delta** (one row), not a rewrite of the whole list,
+  and writes are queued strictly in order so two rapid toggles cannot land
+  backwards.
+- **A click during the opening pull is replayed** on top of whatever the
+  server sent, rather than being silently overwritten.
+- **Signing out clears the synced slices from the browser** — the data stays
+  in the account. This matters on a shared lab machine, and the sign-out
+  confirmation says so plainly.
+- **One person's local state never seeds another person's new account.** The
+  browser records which user its synced state belongs to, and refuses to push
+  it up into a different account.
+
+### Where the code lives
+
+```
+hooks/createPersistedStore.ts   Emits a delta on each mutation; registers
+                                 snapshot/applyRemote/resetLocal per slice
+lib/sync/bus.ts                 Dependency-free seam between the two (no
+                                 React, no Supabase — avoids an import cycle)
+lib/sync/remote.ts              Every Supabase table query, and nothing else
+lib/sync/engine.ts              Seed/pull/push orchestration + write queue
+lib/auth/AuthProvider.tsx       Session state and the magic-link call
+```
+
+The same containment rule as the OpenAlex layer applies: UI components never
+touch Supabase directly.
 
 ## Current limitations
 
-- **No accounts / no cross-device sync.** State lives in one browser. Clear
-  your browser data (or switch browsers/devices) and it's gone.
-- **Live OpenAlex retrieval, `npm install`, and a running dev/build server
-  were not exercised end-to-end during the Aug 2026 remediation pass**
-  because this sandbox blocked essentially all outbound package-registry and
-  API traffic (confirmed directly — every single package fetch in an
-  `npm install` run failed the same way, not just one flagged package). The
-  code was implemented and manually reviewed with care, and the OpenAlex
-  filter/field usage was checked against OpenAlex's live documentation, but
-  `npm run build`/`lint`/`dev` and live-browser verification of the five
-  Prof. Zhou scenarios still need to be run once in an environment with
-  normal internet access before shipping — see the PR description for the
-  exact list.
+- **Accounts are optional, and off by default.** With no Supabase project
+  configured, state lives in one browser: clear your browser data (or switch
+  browsers/devices) and it's gone. See
+  [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md) to turn sync on.
+- **Signed in, the server wins on load.** A change made while genuinely
+  offline is lost if the tab reloads before reconnecting. Queued writes live
+  in memory, not on disk. For a feed you check periodically this is a fair
+  trade for never resurrecting deleted state, but it is a real limitation.
+- **No realtime.** Another device's changes arrive on page load or when the
+  tab regains focus, not instantly. Two devices edited simultaneously will
+  not fight, but they will not live-update each other either.
+- **Sync is per-tab.** Two tabs of this app open at once do not notify each
+  other of local changes; the second tab picks them up on reload or refocus.
+- **No self-service account deletion.** Removing a user is a manual
+  `delete from auth.users` in the Supabase dashboard (it cascades).
+- **The Supabase account layer has not been run against a live Supabase
+  project.** The machine this was built on had no Docker or Supabase CLI, so
+  no Postgres could be started locally. Typecheck, lint, and production build
+  pass; the signed-out path, the sign-in dialog, the unreachable-server error
+  path, and the `/auth/confirm` failure screen were all exercised in a
+  browser. What remains unverified is everything that needs a real server:
+  the migration SQL actually applying, the RLS policies, a real magic-link
+  round trip, and sync between two devices. Walk through "Checking it
+  actually works" in [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md) once before
+  relying on it.
 - **Topic filtering was intentionally not built.** OpenAlex's topic/concept
   metadata isn't reliably populated for every work, and the brief explicitly
   said not to sacrifice core functionality for it.
@@ -324,21 +392,24 @@ independently per journal for 24h (see `src/lib/openalex/sources.ts`), and
 any journal OpenAlex doesn't return a match for is surfaced directly in the
 "Manage journals" dialog rather than silently dropped or faked.
 
-As noted above, this live resolution step has not yet been exercised against
-the real API in either build session due to sandbox network restrictions —
-confirming it end-to-end (and noting here if any specific journal genuinely
-fails to resolve against live OpenAlex data) is the first thing worth doing
-once this runs somewhere with normal internet access.
+This live resolution step has now been exercised against the real API: a cold
+load resolved all 26 journals to OpenAlex Source IDs and returned 339
+articles, with nothing flagged as unresolved in "Manage journals".
 
-## Future: deploying to Vercel
+## Deploying to Vercel
 
 This is a standard Next.js App Router project, so it deploys to Vercel with
 no configuration: connect the GitHub repo, accept the defaults, deploy. No
-environment variables are required for V1 since there's no backend yet.
+environment variables are required — a deployment without them simply has no
+accounts, and the feed works exactly as described above.
+
+To enable accounts on a deployment, add `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` in the Vercel project settings and add that
+origin's `/auth/confirm` to Supabase's redirect allowlist — see
+[`SUPABASE_SETUP.md`](SUPABASE_SETUP.md) step 6.
 
 ## Roadmap ideas beyond V1
 
-- Supabase-backed accounts so seen-state and watchlists sync across devices
 - Optional email/weekly-digest summaries of new articles
 - Author-level or topic-level following, once OpenAlex's topic metadata is
   reliably populated across these journals

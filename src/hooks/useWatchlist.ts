@@ -8,6 +8,7 @@ import { createPersistedIdSetStore } from "./createPersistedStore";
 const watchlistStore = createPersistedIdSetStore(
   STORAGE_KEYS.followedJournalIds,
   DEFAULT_FOLLOWED_JOURNAL_IDS,
+  "watchlist",
 );
 
 /** The user's customizable, persistent journal watchlist. */

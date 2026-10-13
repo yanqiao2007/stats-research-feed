@@ -8,6 +8,7 @@ import { createPersistedEntityStore } from "./createPersistedStore";
 const bookmarksStore = createPersistedEntityStore<Article>(
   STORAGE_KEYS.bookmarkedArticles,
   (article) => article.id,
+  "saved",
 );
 
 /**

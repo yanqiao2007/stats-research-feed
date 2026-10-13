@@ -16,4 +16,11 @@ export const STORAGE_KEYS = {
   bookmarkedArticles: "stats-feed:bookmarked-articles-v2",
   openAlexSourceCache: "stats-feed:openalex-source-cache",
   openAlexWorksCache: "stats-feed:openalex-works-cache",
+  /**
+   * The Supabase user id the synced state in this browser belongs to, or
+   * absent when that state is anonymous. Read only by the sync engine, to
+   * avoid seeding one person's local watchlist and reading history into a
+   * different person's new account on a shared machine.
+   */
+  syncOwner: "stats-feed:sync-owner",
 } as const;

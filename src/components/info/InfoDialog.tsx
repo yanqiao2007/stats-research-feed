@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
+import { useAuth } from "@/lib/auth/AuthProvider";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +17,7 @@ import { Separator } from "@/components/ui/separator";
 const STATS_LAB_URL = "https://www.statslabatcmc.com";
 const OPENALEX_URL = "https://openalex.org";
 const OPENALEX_DOCS_URL = "https://docs.openalex.org";
+const SUPABASE_URL = "https://supabase.com";
 
 interface InfoDialogProps {
   open: boolean;
@@ -45,6 +47,10 @@ function TextLink({ href, children }: { href: string; children: ReactNode }) {
 }
 
 export function InfoDialog({ open, onOpenChange }: InfoDialogProps) {
+  const { status } = useAuth();
+  const accountsAvailable = status !== "unconfigured";
+  const signedIn = status === "signedIn";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
@@ -77,8 +83,8 @@ export function InfoDialog({ open, onOpenChange }: InfoDialogProps) {
           <Section title="Does it cost anything?">
             <p>
               <span className="font-medium text-foreground">Not for you.</span> OpenAlex data is
-              free and open, and this app uses it without an API key, an account, or any payment.
-              Every request it makes is read-only and anonymous.
+              free and open, and this app queries it without an API key or any payment. Every
+              request it makes to OpenAlex is read-only and anonymous, signed in or not.
             </p>
             <p>
               OpenAlex does meter API usage as a small daily budget. Keyless access, which is what
@@ -124,29 +130,71 @@ export function InfoDialog({ open, onOpenChange }: InfoDialogProps) {
           </Section>
 
           <Section title="What is stored about you">
-            <p>
-              There is no account and no database behind this app. Your journal watchlist, the
-              articles you have marked seen, your saved articles, when you last visited, and the
-              cached results all live in this browser&apos;s local storage. None of it is sent to
-              the STATS Lab, and the app contains no analytics, tracking scripts, or third-party
-              embeds.
-            </p>
+            {!accountsAvailable ? (
+              <p>
+                There is no account and no database behind this copy of the app. Your journal
+                watchlist, the articles you have marked seen, your saved articles, when you last
+                visited, and the cached results all live in this browser&apos;s local storage. None
+                of it is sent to the STATS Lab, and the app contains no analytics, tracking
+                scripts, or third-party embeds.
+              </p>
+            ) : signedIn ? (
+              <>
+                <p>
+                  You are signed in, so three things are stored in the STATS Lab&apos;s database (a{" "}
+                  <TextLink href={SUPABASE_URL}>Supabase</TextLink> Postgres instance):{" "}
+                  <span className="font-medium text-foreground">
+                    your journal watchlist, the article identifiers you have marked seen, and your
+                    saved articles
+                  </span>
+                  , alongside the email address you signed in with. That is the entire point of an
+                  account — it is what lets this feed follow you to another computer.
+                </p>
+                <p>
+                  Those rows are readable and writable only by you. Access is enforced in the
+                  database itself with row-level security keyed to your user id, not merely checked
+                  in the browser, and this app never uses an administrative key.
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">Still local only:</span> your
+                  search terms, filters, when you last visited, and every cached OpenAlex result.
+                  Those are never uploaded. The app still contains no analytics, tracking scripts,
+                  or third-party embeds.
+                </p>
+              </>
+            ) : (
+              <>
+                <p>
+                  You are not signed in, so nothing about you is stored on any server. Your journal
+                  watchlist, the articles you have marked seen, your saved articles, when you last
+                  visited, and the cached results all live in this browser&apos;s local storage.
+                </p>
+                <p>
+                  An account is available but entirely optional. If you create one, your watchlist,
+                  seen articles, and saved articles are stored in the STATS Lab&apos;s database so
+                  they follow you between devices — nothing else is, and you can read the details
+                  here again once signed in. The app contains no analytics, tracking scripts, or
+                  third-party embeds either way.
+                </p>
+              </>
+            )}
             <p>
               <span className="font-medium text-foreground">What does leave your browser:</span>{" "}
-              requests to OpenAlex. Those are the only automatic outbound calls the app makes, and
-              they necessarily show OpenAlex your IP address and which journals you follow, since
-              the journal identifiers are part of the query.
+              requests to OpenAlex{accountsAvailable && signedIn ? ", and your synced state" : ""}.
+              OpenAlex requests necessarily show OpenAlex your IP address and which journals you
+              follow, since the journal identifiers are part of the query.
             </p>
             <p>
               <span className="font-medium text-foreground">What never leaves:</span> your search
-              terms, which articles you marked seen, and your saved list. Searching and filtering
-              happen locally over articles already downloaded, so nothing you type is transmitted
-              anywhere. Opening an article is an ordinary link out to the publisher, visible to them
-              like any other visit.
+              terms. Searching and filtering happen locally over articles already downloaded, so
+              nothing you type is transmitted anywhere. Opening an article is an ordinary link out
+              to the publisher, visible to them like any other visit.
             </p>
             <p>
-              Clearing your browser data for this site resets the feed to a blank slate, and your
-              history will not follow you to another browser or device.
+              Clearing your browser data for this site resets the feed to a blank slate.
+              {signedIn
+                ? " Because you are signed in, your watchlist, seen articles, and saved articles come back the next time you sign in."
+                : " Without an account, your history will not follow you to another browser or device."}
             </p>
           </Section>
 
@@ -165,6 +213,13 @@ export function InfoDialog({ open, onOpenChange }: InfoDialogProps) {
                 Because results are cached for 20 minutes, a brand-new article may take that long to
                 appear.
               </li>
+              {signedIn && (
+                <li>
+                  Your account is re-read from the server whenever the page loads or the tab regains
+                  focus, and the server&apos;s copy wins. A change you make while genuinely offline
+                  can therefore be overwritten if you reload before reconnecting.
+                </li>
+              )}
             </ul>
           </Section>
 

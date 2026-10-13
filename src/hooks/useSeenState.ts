@@ -3,7 +3,7 @@
 import { STORAGE_KEYS } from "@/lib/storage/keys";
 import { createPersistedIdSetStore } from "./createPersistedStore";
 
-const seenStore = createPersistedIdSetStore(STORAGE_KEYS.seenArticleIds, []);
+const seenStore = createPersistedIdSetStore(STORAGE_KEYS.seenArticleIds, [], "seen");
 
 /** Persistent seen/unseen tracking for articles. */
 export function useSeenState() {
